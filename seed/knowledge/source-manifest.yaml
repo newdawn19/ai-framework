@@ -1,0 +1,27 @@
+version: 2
+sources: []
+
+# 单个来源示例：
+# - id: source-YYYY-NNN
+#   title: 来源标题
+#   type: web | document | specification | experiment | project-defined
+#   path: raw/<type>/YYYY-MM-DD-slug.ext 或 null
+#   origin: 不含秘密的原始 URL、文档编号或受控位置标识
+#   author: 作者、机构或 null
+#   published: YYYY-MM-DD 或 null
+#   retrieved: YYYY-MM-DD
+#   source_version: "" 或 null
+#   status: pending | processed | rejected | superseded
+#   authority: primary | secondary | internal
+#   reliability: high | medium | low | unknown
+#   sensitivity: public | internal | restricted
+#   license: SPDX、许可说明或 unknown
+#   storage_policy: snapshot | metadata-only | controlled-external
+#   checksum_algorithm: sha256 或 null
+#   checksum: "" 或 null
+#   snapshot_at: YYYY-MM-DD 或 null
+#   processed_at: null
+#   supersedes: null
+#   superseded_by: null
+#   pages: []
+#   notes: 未知字段、许可、校验或访问限制的非敏感说明

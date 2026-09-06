@@ -1,0 +1,168 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# Project-local bootstrap launcher. It is intentionally small: workflow rules
+# always come from the release selected by ai-framework.lock or init arguments.
+
+fail() {
+  echo "error: $*" >&2
+  exit 1
+}
+
+value_after_option() {
+  local option="$1"
+  shift
+  while [ "$#" -gt 0 ]; do
+    if [ "$1" = "$option" ]; then
+      [ "$#" -ge 2 ] || fail "missing value for $option"
+      printf '%s\n' "$2"
+      return
+    fi
+    shift
+  done
+}
+
+lock_value() {
+  local lock_file="$1"
+  local key="$2"
+  awk -F ': *' -v key="$key" '$1 == key { sub(/^[^:]*: */, ""); print; exit }' "$lock_file"
+}
+
+git_common_dir_for() {
+  local project_root="$1"
+  local common_dir
+
+  common_dir="$(git -C "$project_root" rev-parse --git-common-dir)" \
+    || fail "cannot resolve Git common directory"
+  case "$common_dir" in
+    /*) ;;
+    *) common_dir="$project_root/$common_dir" ;;
+  esac
+  (cd "$common_dir" && pwd -P) \
+    || fail "Git common directory does not exist: $common_dir"
+}
+
+agent_workspace_for() {
+  local project_root="$1"
+  local common_dir primary_root resolved_root
+
+  common_dir="$(git_common_dir_for "$project_root")"
+  [ "$(basename "$common_dir")" = ".git" ] \
+    || fail "unsupported Git layout: common directory must be <primary-project>/.git"
+  primary_root="$(dirname "$common_dir")"
+  resolved_root="$(git -C "$primary_root" rev-parse --show-toplevel 2>/dev/null)" \
+    || fail "cannot resolve primary project root from: $common_dir"
+  resolved_root="$(cd "$resolved_root" && pwd -P)"
+  [ "$resolved_root" = "$primary_root" ] \
+    || fail "Git common directory is not directly under the primary project root: $common_dir"
+  printf '%s/agent_bootstrap\n' "$primary_root"
+}
+
+reject_linked_agent_workspace() {
+  local project_root="$1"
+  local workspace primary_root
+  workspace="$(agent_workspace_for "$project_root")"
+  primary_root="$(dirname "$workspace")"
+  if [ "$project_root" != "$primary_root" ] && [ -e "$project_root/agent_bootstrap" ]; then
+    fail "linked worktree must not contain agent_bootstrap/: $project_root/agent_bootstrap"
+  fi
+}
+
+require_primary_worktree() {
+  local project_root="$1"
+  local workspace primary_root
+  workspace="$(agent_workspace_for "$project_root")"
+  primary_root="$(dirname "$workspace")"
+  [ "$project_root" = "$primary_root" ] \
+    || fail "sync must run from the primary worktree: $primary_root"
+}
+
+knowledge_path_for() {
+  local workspace="$1"
+  local knowledge_dir="$2"
+  case "$knowledge_dir" in
+    agent_bootstrap/*) printf '%s/%s\n' "$workspace" "${knowledge_dir#agent_bootstrap/}" ;;
+    *) fail "unsupported knowledge_dir: $knowledge_dir" ;;
+  esac
+}
+
+COMMAND="${1:-}"
+[ -n "$COMMAND" ] || fail "missing command"
+shift
+
+for argument in "$@"; do
+  [ "$argument" != "--target" ] \
+    || fail "project launcher determines --target automatically; do not pass it explicitly"
+done
+
+LAUNCHER_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
+PROJECT_ROOT="$(cd "$LAUNCHER_DIR/.." && pwd -P)"
+PROJECT_GIT_ROOT="$(git -C "$PROJECT_ROOT" rev-parse --show-toplevel 2>/dev/null)" \
+  || fail "launcher parent is not inside a Git repository"
+PROJECT_GIT_ROOT="$(cd "$PROJECT_GIT_ROOT" && pwd -P)"
+[ "$PROJECT_GIT_ROOT" = "$PROJECT_ROOT" ] \
+  || fail "tools/ai-framework must be located directly under the Git repository root"
+reject_linked_agent_workspace "$PROJECT_ROOT"
+
+if [ "$COMMAND" = "sync" ]; then
+  require_primary_worktree "$PROJECT_ROOT"
+fi
+
+case "$COMMAND" in
+  init|migrate)
+    SOURCE="$(value_after_option --source "$@")"
+    REF="$(value_after_option --ref "$@")"
+    [ -n "$SOURCE" ] || fail "$COMMAND requires --source"
+    [ -n "$REF" ] || fail "$COMMAND requires --ref"
+    ;;
+  sync|status|path)
+    LOCK_FILE="$PROJECT_ROOT/ai-framework.lock"
+    [ -f "$LOCK_FILE" ] || fail "missing ai-framework.lock; run init first"
+    SOURCE="$(lock_value "$LOCK_FILE" source)"
+    REF="$(lock_value "$LOCK_FILE" ref)"
+    [ -n "$SOURCE" ] || fail "lock is missing source"
+    [ -n "$REF" ] || fail "lock is missing ref"
+    ;;
+  *)
+    fail "unsupported command: $COMMAND"
+    ;;
+esac
+
+if [ "$COMMAND" = "status" ]; then
+  AGENT_WORKSPACE="$(agent_workspace_for "$PROJECT_ROOT")"
+  VERSION_FILE="$AGENT_WORKSPACE/FRAMEWORK-VERSION"
+  echo "workspace: $AGENT_WORKSPACE"
+  echo "lock: $REF ($(lock_value "$LOCK_FILE" commit))"
+  echo "project: $(lock_value "$LOCK_FILE" project_name)"
+  echo "knowledge: $(lock_value "$LOCK_FILE" knowledge_dir)"
+  if [ -f "$VERSION_FILE" ]; then
+    echo "installed: $(lock_value "$VERSION_FILE" source_commit)"
+  else
+    echo "installed: missing"
+  fi
+  exit 0
+fi
+
+if [ "$COMMAND" = "path" ]; then
+  AGENT_WORKSPACE="$(agent_workspace_for "$PROJECT_ROOT")"
+  KNOWLEDGE_DIR="$(lock_value "$LOCK_FILE" knowledge_dir)"
+  [ -n "$KNOWLEDGE_DIR" ] || KNOWLEDGE_DIR="agent_bootstrap/knowledge"
+  echo "workspace: $AGENT_WORKSPACE"
+  echo "framework: $AGENT_WORKSPACE"
+  echo "project: $AGENT_WORKSPACE/project"
+  echo "knowledge: $(knowledge_path_for "$AGENT_WORKSPACE" "$KNOWLEDGE_DIR")"
+  exit 0
+fi
+
+TEMP_ROOT="$(mktemp -d "${TMPDIR:-/tmp}/ai-framework-launcher.XXXXXX")"
+cleanup() { rm -rf "$TEMP_ROOT"; }
+trap cleanup EXIT
+
+RELEASE_DIR="$TEMP_ROOT/release"
+git clone --quiet "$SOURCE" "$RELEASE_DIR"
+RELEASE_COMMIT="$(git -C "$RELEASE_DIR" rev-parse --verify --quiet "${REF}^{commit}")" \
+  || fail "release ref does not exist: $REF"
+git -C "$RELEASE_DIR" checkout --quiet --detach "$RELEASE_COMMIT"
+[ -x "$RELEASE_DIR/scripts/ai-framework" ] || fail "release does not contain scripts/ai-framework"
+
+"$RELEASE_DIR/scripts/ai-framework" "$COMMAND" --target "$PROJECT_ROOT" "$@"

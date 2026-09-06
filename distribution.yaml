@@ -1,0 +1,29 @@
+layout_version: 1
+
+# `framework/` 中的内容每次 sync 都会覆盖到主工作树唯一的 agent_bootstrap/；linked worktree 通过 Git common dir 公共读取。
+shared:
+  - framework/README.md -> agent_bootstrap/README.md
+  - framework/agents/AGENTS.md -> agent_bootstrap/agents/AGENTS.md
+  - framework/agents/roles/ -> agent_bootstrap/agents/roles/
+  - framework/governance/ -> agent_bootstrap/governance/
+  - framework/templates/ -> agent_bootstrap/templates/
+
+# `seed/` 中的内容仅在 init 时、目标不存在时创建。
+seed_once:
+  - seed/root-AGENTS.md -> AGENTS.md
+  - seed/PROJECT-CONTEXT.md -> PROJECT-CONTEXT.md
+  - seed/agent-bootstrap.gitignore -> agent_bootstrap/.gitignore
+  - seed/project/ -> agent_bootstrap/project/
+  - seed/knowledge/ -> <knowledge_dir>/
+
+# 项目启动器由 init 创建，并在 sync / migrate 时更新到 lock 固定的同一发布版本。
+managed_entry:
+  - seed/tools/ai-framework -> tools/ai-framework
+
+# sync 永不覆盖这些个人本地记录。
+preserve:
+  - agent_bootstrap/.git/
+  - agent_bootstrap/.gitignore
+  - PROJECT-CONTEXT.md
+  - agent_bootstrap/project/
+  - <knowledge_dir>/

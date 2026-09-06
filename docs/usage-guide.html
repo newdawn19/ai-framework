@@ -1,0 +1,87 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>AI Framework 使用说明</title>
+  <style>
+    :root{--ink:#1e293b;--muted:#64748b;--line:#dbe3ee;--paper:#fff;--bg:#f4f8fc;--brand:#075985;--code:#0f172a}*{box-sizing:border-box}body{margin:0;color:var(--ink);background:var(--bg);font:15px/1.7 -apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif}.page{max-width:1080px;margin:0 auto;padding:32px 22px 64px}header,section{margin-bottom:20px;padding:26px;background:var(--paper);border:1px solid var(--line);border-radius:12px}header{border-top:5px solid var(--brand)}h1{margin:0 0 6px;font-size:30px}h2{margin:0 0 14px;color:#0c4a6e;font-size:21px}h3{margin:20px 0 7px;font-size:17px}.lead,footer{color:var(--muted)}.note,.warning{margin:14px 0;padding:12px 15px;border-radius:7px}.note{background:#f0f9ff;border-left:4px solid #0284c7}.warning{background:#fff7ed;border-left:4px solid #ea580c}pre{overflow:auto;padding:15px;color:#e2e8f0;background:var(--code);border-radius:8px;line-height:1.55}code{padding:1px 4px;background:#eaf0f7;border-radius:4px;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:.9em}pre code{padding:0;color:inherit;background:none}table{width:100%;border-collapse:collapse;margin:12px 0}th,td{padding:9px 11px;border:1px solid var(--line);text-align:left;vertical-align:top}th{background:#f8fafc}.flow{display:grid;gap:8px}.flow div{padding:10px 14px;background:#f8fafc;border:1px solid var(--line);border-radius:7px}footer{text-align:center;font-size:13px}@page{size:A4;margin:12mm}@media print{body{background:#fff;-webkit-print-color-adjust:exact;print-color-adjust:exact}.page{max-width:none;padding:0}header,section{margin-bottom:12px;padding:18px;border-radius:8px}h2,h3{break-after:avoid}pre{white-space:pre-wrap;overflow-wrap:anywhere}pre,.note,.warning,.flow div,tr{break-inside:avoid}footer{margin-top:8px}}
+  </style>
+</head>
+<body>
+  <main class="page">
+    <header><h1>AI Framework 使用说明</h1><p class="lead">团队共享流程合约；每位开发者本地维护自己的项目记录、知识与执行历史。</p></header>
+
+    <section>
+      <h2>1. 定位与目录</h2>
+      <p>中央 <code>ai_framework</code> 仓库发布共享规则。目标代码仓库提交入口、共享项目上下文、版本锁定和启动器；实际框架与个人记录只保存在主工作树被外层 Git 忽略的 <code>agent_bootstrap/</code>。</p>
+      <pre><code>主工作树（团队入口 + 一份个人治理区）&#10;  AGENTS.md&#10;  PROJECT-CONTEXT.md&#10;  ai-framework.lock&#10;  tools/ai-framework&#10;  agent_bootstrap/&#10;    .git/                    # 个人流程记录历史&#10;    project/                 # 本地 DP、Sprint、Task、验收记录&#10;    photo_app_knowledge/     # 名称由 lock 固定&#10;    agents/、governance/、templates/&#10;&#10;linked worktree（仅代码与受 Git 管理的入口）&#10;  AGENTS.md、PROJECT-CONTEXT.md、ai-framework.lock、tools/&#10;  src/ ...&#10;  不创建 agent_bootstrap/</code></pre>
+      <div class="note">所有 linked worktree 通过 Git common dir 自动读取主工作树的同一份 Agent 工作区；无需复制、软链接或额外路径配置。</div>
+    </section>
+
+    <section>
+      <h2>2. 新项目初始化</h2>
+      <p>项目创建者先从 AI Framework 发布包取得 <code>seed/tools/ai-framework</code>，放到目标项目的 <code>tools/ai-framework</code> 并赋予可执行权限。</p>
+      <pre><code>mkdir -p tools&#10;# 将 seed/tools/ai-framework 放入 tools/ai-framework&#10;chmod +x tools/ai-framework</code></pre>
+      <p>在目标项目的主工作树根目录执行：</p>
+      <pre><code>./tools/ai-framework init \&#10;  --source git@bitbucket.org:cool-flutter/ai.git \&#10;  --ref &lt;release-tag&gt; \&#10;  --project-name photo_app</code></pre>
+      <p>初始化会创建 <code>AGENTS.md</code>、<code>PROJECT-CONTEXT.md</code>、<code>ai-framework.lock</code>、<code>/agent_bootstrap/</code> 忽略规则，以及主工作树中带个人本地 Git 的唯一 <code>agent_bootstrap/</code>。lock 固定 <code>project_name</code> 和 <code>knowledge_dir</code>；本地 Git 使用 <code>main</code> 分支，并自动创建首次基线提交。</p>
+      <pre><code>git add AGENTS.md PROJECT-CONTEXT.md ai-framework.lock tools/ai-framework .gitignore&#10;git commit -m "chore: initialize AI Framework"</code></pre>
+      <div class="note"><code>--project-name</code> 可省略，但项目初始化者应确认自动生成的名称。lock 提交后，其他成员沿用该名称，不根据自己的克隆目录重新命名知识库。</div>
+      <div class="warning">初始化要求目标目录已是 Git 仓库，且不存在 <code>AGENTS.md</code>、<code>ai-framework.lock</code> 和 <code>agent_bootstrap/</code>。已有旧版复制接入时，请使用迁移流程。</div>
+    </section>
+
+    <section>
+      <h2>3. 日常同步、检查与升级</h2>
+      <h3>同步与状态</h3>
+      <pre><code>./tools/ai-framework sync&#10;./tools/ai-framework sync --ref v2.4.4&#10;./tools/ai-framework sync --latest&#10;./tools/ai-framework status&#10;./tools/ai-framework path</code></pre>
+      <p>无参数 <code>sync</code> 按 lock 固定版本同步。<code>sync --ref</code> 升级到指定 tag 或 commit；<code>sync --latest</code> 升级到来源仓库最新稳定语义版本 tag，并在成功后更新 lock。三种 <code>sync</code> 都只能从主工作树执行。<code>path</code> 输出 workspace、project 与 knowledge 的实际绝对路径；<code>status</code> 和 <code>path</code> 可从 linked worktree 执行。</p>
+      <h3>创建 linked worktree 后</h3>
+      <pre><code>test -f AGENTS.md&#10;test -f PROJECT-CONTEXT.md&#10;test -f ai-framework.lock&#10;test -x tools/ai-framework&#10;test ! -e agent_bootstrap&#10;./tools/ai-framework status&#10;./tools/ai-framework path</code></pre>
+      <div class="warning">linked worktree 不承载 <code>agent_bootstrap/</code>。定位失败时回到主工作树修复公共 Agent 工作区，不得在 Task worktree 初始化或复制另一份治理目录。</div>
+      <div class="note">既有 worktree 已有旧目录时先执行 <code>git ls-files -- agent_bootstrap</code>。若仍被分支跟踪，先更新到移除治理目录的新基线；若只是本机副本，先核对并保留其中独有记录。脚本不会自动删除或合并旧副本。</div>
+      <h3>升级框架</h3>
+      <ol><li>在主工作树执行 <code>./tools/ai-framework sync --ref &lt;tag-or-commit&gt;</code>，或执行 <code>./tools/ai-framework sync --latest</code>。</li><li>命令更新 lock 的目标版本与完整 commit。</li><li>按目标代码仓库的正常流程审查、提交 lock 和启动器变更。</li><li>每位开发者执行 <code>./tools/ai-framework sync</code>。</li></ol>
+      <div class="note">私有仓库使用 SSH key、ssh-agent 或系统 Git 凭据管理器认证。不要在 lock、启动器或 Git URL 中保存密码和 token。</div>
+    </section>
+
+    <section>
+      <h2>4. 旧版 cp 接入项目迁移</h2>
+      <p>旧项目已有 <code>agent_bootstrap/</code>，或旧 lock 缺少 <code>project_name</code> / <code>knowledge_dir</code> 时，不要运行 <code>init</code>。先放入新的项目启动器，再执行只读检查：</p>
+      <pre><code>./tools/ai-framework migrate \&#10;  --source git@bitbucket.org:cool-flutter/ai.git \&#10;  --ref &lt;release-tag&gt; \&#10;  --project-name photo_app \&#10;  --dry-run</code></pre>
+      <div class="note">项目启动器会自动把目标设置为当前项目根目录。如果第一行单独执行后提示 <code>--target is required</code>，说明 <code>tools/ai-framework</code> 放入的是中央执行脚本，而不是 <code>seed/tools/ai-framework</code> 项目启动器。</div>
+      <p>确认报告后，明确授权替换旧共享规则：</p>
+      <pre><code>./tools/ai-framework migrate \&#10;  --source git@bitbucket.org:cool-flutter/ai.git \&#10;  --ref &lt;release-tag&gt; \&#10;  --project-name photo_app \&#10;  --apply \&#10;  --replace-shared</code></pre>
+      <table><thead><tr><th>内容</th><th>迁移处理</th></tr></thead><tbody><tr><td><code>tools/ai-framework</code></td><td>更新为目标发布版本的项目启动器</td></tr><tr><td><code>agents/PROJECT-CONTEXT.md</code></td><td>复制到目标工程根目录并交由项目 Git 管理</td></tr><tr><td><code>project/</code></td><td>原样保留</td></tr><tr><td>标准旧 <code>knowledge/</code></td><td>移到 lock 指定的项目名知识库；自定义目录需人工识别</td></tr><tr><td>旧共享合约、角色、治理、模板</td><td>仅在 <code>--replace-shared</code> 下替换</td></tr><tr><td><code>agent_bootstrap/AGENTS.md</code></td><td>归档到 <code>.migration-archive/</code></td></tr><tr><td>自定义根 <code>AGENTS.md</code></td><td>默认停止；人工合并，或明确加 <code>--replace-root-agent</code></td></tr></tbody></table>
+      <div class="warning">若目标代码仓库已跟踪 <code>agent_bootstrap/</code>，迁移会停止。旧共享文件是否有本地修改无法自动推断，因此 <code>--apply</code> 必须显式附加 <code>--replace-shared</code>。</div>
+    </section>
+
+    <section>
+      <h2>5. 个人本地记录 Git</h2>
+      <p>主工作树的 <code>agent_bootstrap/.git</code> 只记录个人的本地 DP、Sprint、Task 和项目名知识库，并由所有 linked worktree 公共读取。共享的 <code>PROJECT-CONTEXT.md</code> 由目标代码仓库管理；<code>init</code> 已创建个人记录首次基线提交。</p>
+      <pre><code>cd agent_bootstrap&#10;git status&#10;git add project photo_app_knowledge .gitignore&#10;git commit -m "docs: record local planning and evidence"</code></pre>
+      <p>Task 中的 <code>Delivery commit</code> 始终指向目标代码仓库中的代码提交，不是这里的本地记录提交。</p>
+    </section>
+
+    <section>
+      <h2>6. 工作流</h2>
+      <p>本地 DP（LDP）记录当前工作中的决策边界、约束与取舍。命中产品方向、架构、安全、数据模型、权限、外部 API 等决策边界时，必须先接受相关 LDP；普通局部实现不需要新增 LDP。关联的 Sprint 与 Task 必须遵守已接受的 LDP。</p>
+      <div class="flow"><div>可选讨论（Discussion）：候选方案和未决问题，不是执行授权</div><div>Sprint Draft：明确目标、范围、非目标；命中决策边界时已有 Accepted LDP</div><div>Sprint Ready：验收、依赖、必要 LDP 与 Gate 计划齐备，才可创建 Task</div><div>Task：Ready → In Progress → In Review → Done</div><div>独立验收；按需执行集成与硬件 / 目标环境 Gate</div><div>Sprint Review Passed 后，Sprint 才可 Completed</div></div>
+      <div class="warning">Discussion 和 Draft 均不得创建 Task 或开始实现。范围、架构或合同变化时，回到 Issue → 产品经理审查 → LDP → Sprint / Task 更新。</div>
+      <h3>Gate</h3>
+      <ul><li><strong>独立验收 Gate：</strong>每个 Task 必需；验收人不得与 Task Owner 相同。</li><li><strong>集成验收 Gate：</strong>跨 Task、模块或服务时适用。</li><li><strong>硬件 / 目标环境 Gate：</strong>依赖实体设备、真机、发布环境或目标环境时适用。</li></ul>
+      <h3>环境搭建与部署</h3>
+      <p>根目录 <code>PROJECT-CONTEXT.md</code> 记录项目长期有效的环境 ID、平台位置、部署入口和保护规则；某一次部署的目标、执行边界、人工授权、attempt 和结果记录在对应 Task。涉及目标环境变化时，先通过 <code>./tools/ai-framework path</code> 定位公共 Agent 工作区，再读取其中的 <code>governance/deployment-governance.md</code>。</p>
+      <pre><code>## Environment Change Authorization&#10;&#10;- **Target and Change:** 平台工程师填写，项目经理核对。&#10;- **Execution Boundary:** 平台工程师填写，项目经理核对。&#10;- **Approval:** 项目经理记录人工 Owner 的授权；未批准时为 Pending。</code></pre>
+      <div class="flow"><div>产品经理定义目标与验收</div><div>项目经理创建部署 Task</div><div>平台工程师补全目标和执行边界</div><div>人工 Owner 批准完整范围</div><div>平台工程师在授权内执行、诊断和有限重试</div><div>交付 In Review，进行独立验收与必要的目标环境 Gate</div></div>
+      <div class="note">授权针对有边界的环境变化，不针对每条命令。同一范围内的准备、诊断、修复和预算内重试保留在原 Task；Gate 验证结果，不作为每条环境操作的执行许可。</div>
+    </section>
+
+    <section>
+      <h2>7. 四个 Agent 角色</h2>
+      <table><thead><tr><th>角色</th><th>主要职责</th><th>边界</th></tr></thead><tbody><tr><td>产品经理 Agent</td><td>分析方案，创建和维护本地 DP、Sprint</td><td>不写生产代码，不创建或调度 Task</td></tr><tr><td>项目经理 Agent</td><td>将 Ready Sprint 与其必要关联的 Accepted 本地 DP 转化为 Task，协调验收、Gate 和 Review</td><td>不执行部署，不代替人工 Owner 授权</td></tr><tr><td>高级工程师 Agent</td><td>按 Task 实现、测试、提交 delivery commit，并交付 In Review</td><td>不自行宣布 Task Done 或 Sprint 完成</td></tr><tr><td>平台工程师 Agent</td><td>按部署 Task 和环境变更授权搭建环境、交付配置与产物、部署、恢复并验证目标环境</td><td>不扩大授权范围，不验收自己的 Task</td></tr></tbody></table>
+    </section>
+    <footer>AI Framework · 使用说明</footer>
+  </main>
+</body>
+</html>

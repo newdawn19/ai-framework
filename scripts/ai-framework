@@ -1,0 +1,658 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+PROGRAM_NAME="ai-framework"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+FRAMEWORK_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+
+usage() {
+  cat <<'EOF'
+Usage:
+  ai-framework init --target <project-dir> --source <git-url> --ref <tag-or-commit> [--project-name <name>]
+  ai-framework sync [--target <project-dir>] [--ref <tag-or-commit> | --latest]
+  ai-framework status [--target <project-dir>]
+  ai-framework path [--target <project-dir>]
+  ai-framework migrate --target <project-dir> --source <git-url> --ref <tag-or-commit> [--project-name <name>] --dry-run
+  ai-framework migrate --target <project-dir> --source <git-url> --ref <tag-or-commit> [--project-name <name>] --apply --replace-shared [--replace-root-agent]
+
+`init` creates the target entry files and a private agent_bootstrap/.git repository in the primary worktree.
+`sync` replaces the shared framework runtime specified by ai-framework.lock. Use --ref or --latest to upgrade the lock first.
+`path` resolves the primary worktree's shared Agent workspace from Git's common directory.
+`migrate` converts an older copy-based installation without overwriting local records.
+EOF
+}
+
+fail() {
+  echo "error: $*" >&2
+  exit 1
+}
+
+require_git_repository() {
+  local target="$1"
+  git -C "$target" rev-parse --is-inside-work-tree >/dev/null 2>&1 \
+    || fail "target is not inside a Git repository: $target"
+}
+
+git_common_dir_for() {
+  local target="$1"
+  local common_dir
+
+  common_dir="$(git -C "$target" rev-parse --git-common-dir)" \
+    || fail "cannot resolve Git common directory: $target"
+  case "$common_dir" in
+    /*) ;;
+    *) common_dir="$target/$common_dir" ;;
+  esac
+  (cd "$common_dir" && pwd -P) \
+    || fail "Git common directory does not exist: $common_dir"
+}
+
+primary_project_root_for() {
+  local target="$1"
+  local common_dir primary_root resolved_root
+
+  common_dir="$(git_common_dir_for "$target")"
+  [ "$(basename "$common_dir")" = ".git" ] \
+    || fail "unsupported Git layout: common directory must be <primary-project>/.git"
+  primary_root="$(dirname "$common_dir")"
+  resolved_root="$(git -C "$primary_root" rev-parse --show-toplevel 2>/dev/null)" \
+    || fail "cannot resolve primary project root from: $common_dir"
+  resolved_root="$(cd "$resolved_root" && pwd -P)"
+  [ "$resolved_root" = "$primary_root" ] \
+    || fail "Git common directory is not directly under the primary project root: $common_dir"
+  printf '%s\n' "$primary_root"
+}
+
+agent_workspace_for() {
+  printf '%s/agent_bootstrap\n' "$(primary_project_root_for "$1")"
+}
+
+require_primary_worktree() {
+  local target="$1"
+  local primary_root
+  primary_root="$(primary_project_root_for "$target")"
+  [ "$target" = "$primary_root" ] \
+    || fail "this command must run from the primary worktree: $primary_root"
+}
+
+reject_linked_agent_workspace() {
+  local target="$1"
+  local primary_root
+  primary_root="$(primary_project_root_for "$target")"
+  if [ "$target" != "$primary_root" ] && [ -e "$target/agent_bootstrap" ]; then
+    fail "linked worktree must not contain agent_bootstrap/: $target/agent_bootstrap"
+  fi
+}
+
+knowledge_path_for() {
+  local target="$1"
+  local knowledge_dir="$2"
+  local workspace
+  workspace="$(agent_workspace_for "$target")"
+  case "$knowledge_dir" in
+    agent_bootstrap/*) printf '%s/%s\n' "$workspace" "${knowledge_dir#agent_bootstrap/}" ;;
+    *) fail "unsupported knowledge_dir: $knowledge_dir" ;;
+  esac
+}
+
+lock_value() {
+  local lock_file="$1"
+  local key="$2"
+  awk -F ': *' -v key="$key" '$1 == key { sub(/^[^:]*: */, ""); print; exit }' "$lock_file"
+}
+
+resolve_project_name() {
+  local target="$1"
+  local requested="$2"
+  local project_name="${requested:-$(basename "$target")}"
+
+  case "$project_name" in
+    ''|*[!A-Za-z0-9._-]*)
+      fail "project name must use only letters, numbers, dot, underscore, or hyphen: $project_name"
+      ;;
+  esac
+  printf '%s\n' "$project_name"
+}
+
+knowledge_dir_for() {
+  printf 'agent_bootstrap/%s_knowledge\n' "$1"
+}
+
+validate_knowledge_dir() {
+  local project_name="$1"
+  local knowledge_dir="$2"
+  local expected
+  expected="$(knowledge_dir_for "$project_name")"
+  [ "$knowledge_dir" = "$expected" ] \
+    || fail "unsupported knowledge_dir: $knowledge_dir (expected $expected)"
+}
+
+ensure_outer_ignore() {
+  local target="$1"
+  local ignore_file="$target/.gitignore"
+  local marker="# AI Framework local control plane"
+  local tracked_bootstrap
+
+  tracked_bootstrap="$(git -C "$target" ls-files -- agent_bootstrap)"
+  if [ -n "$tracked_bootstrap" ]; then
+    fail "target already tracks agent_bootstrap/; remove it from the code repository explicitly before initialization"
+  fi
+
+  if [ -f "$ignore_file" ] && grep -Fqx '/agent_bootstrap/' "$ignore_file"; then
+    return
+  fi
+
+  {
+    if [ -f "$ignore_file" ] && [ -s "$ignore_file" ]; then
+      printf '\n'
+    fi
+    printf '%s\n/agent_bootstrap/\n' "$marker"
+  } >> "$ignore_file"
+}
+
+fetch_release() {
+  local source="$1"
+  local ref="$2"
+  local expected_commit="$3"
+  local release_commit
+
+  RELEASE_TEMP="$(mktemp -d "${TMPDIR:-/tmp}/ai-framework.XXXXXX")"
+  RELEASE_DIR="$RELEASE_TEMP/release"
+  git clone --quiet "$source" "$RELEASE_DIR"
+  release_commit="$(git -C "$RELEASE_DIR" rev-parse --verify --quiet "${ref}^{commit}")" \
+    || fail "release ref does not exist: $ref"
+  git -C "$RELEASE_DIR" checkout --quiet --detach "$release_commit"
+  RESOLVED_COMMIT="$(git -C "$RELEASE_DIR" rev-parse HEAD)"
+
+  if [ -n "$expected_commit" ] && [ "$expected_commit" != "$RESOLVED_COMMIT" ]; then
+    fail "lock commit does not match ref: expected $expected_commit, got $RESOLVED_COMMIT"
+  fi
+
+  [ -f "$RELEASE_DIR/distribution.yaml" ] || fail "release does not contain distribution.yaml"
+  [ -d "$RELEASE_DIR/framework" ] || fail "release does not contain framework/"
+  [ -d "$RELEASE_DIR/seed" ] || fail "release does not contain seed/"
+}
+
+latest_release_ref() {
+  local source="$1"
+  local line remote_ref tag major minor patch
+  local best_tag=""
+  local best_major=-1 best_minor=-1 best_patch=-1
+
+  while IFS= read -r line; do
+    remote_ref="${line#*$'\t'}"
+    tag="${remote_ref#refs/tags/}"
+    if [[ "$tag" =~ ^v([0-9]+)\.([0-9]+)\.([0-9]+)$ ]]; then
+      major="${BASH_REMATCH[1]}"
+      minor="${BASH_REMATCH[2]}"
+      patch="${BASH_REMATCH[3]}"
+      if (( major > best_major || (major == best_major && minor > best_minor) || (major == best_major && minor == best_minor && patch > best_patch) )); then
+        best_tag="$tag"
+        best_major="$major"
+        best_minor="$minor"
+        best_patch="$patch"
+      fi
+    fi
+  done < <(git ls-remote --tags --refs "$source")
+
+  [ -n "$best_tag" ] || fail "no stable semantic-version tag found in source: $source"
+  printf '%s\n' "$best_tag"
+}
+
+cleanup_release() {
+  if [ -n "${RELEASE_TEMP:-}" ] && [ -d "$RELEASE_TEMP" ]; then
+    rm -rf "$RELEASE_TEMP"
+  fi
+}
+
+replace_shared_runtime() {
+  local target="$1"
+  local bootstrap
+  bootstrap="$(agent_workspace_for "$target")"
+  local source_root="$2"
+
+  mkdir -p "$bootstrap/agents"
+  rm -rf "$bootstrap/agents/roles" "$bootstrap/governance" "$bootstrap/templates"
+  cp "$source_root/framework/README.md" "$bootstrap/README.md"
+  cp "$source_root/framework/agents/AGENTS.md" "$bootstrap/agents/AGENTS.md"
+  cp -R "$source_root/framework/agents/roles" "$bootstrap/agents/roles"
+  cp -R "$source_root/framework/governance" "$bootstrap/governance"
+  cp -R "$source_root/framework/templates" "$bootstrap/templates"
+
+  cat > "$bootstrap/FRAMEWORK-VERSION" <<EOF
+layout_version: 1
+source_commit: $RESOLVED_COMMIT
+installed_at: $(date -u +%Y-%m-%dT%H:%M:%SZ)
+EOF
+}
+
+seed_if_missing() {
+  local target="$1"
+  local bootstrap
+  bootstrap="$(agent_workspace_for "$target")"
+  local source_root="$2"
+  local knowledge_dir="$3"
+  local knowledge_path
+  knowledge_path="$(knowledge_path_for "$target" "$knowledge_dir")"
+
+  mkdir -p "$bootstrap/agents"
+  [ -f "$bootstrap/.gitignore" ] || cp "$source_root/seed/agent-bootstrap.gitignore" "$bootstrap/.gitignore"
+  ensure_inner_ignore "$bootstrap" "$source_root"
+  [ -f "$target/PROJECT-CONTEXT.md" ] || cp "$source_root/seed/PROJECT-CONTEXT.md" "$target/PROJECT-CONTEXT.md"
+  [ -d "$bootstrap/project" ] || cp -R "$source_root/seed/project" "$bootstrap/project"
+  [ -d "$knowledge_path" ] || cp -R "$source_root/seed/knowledge" "$knowledge_path"
+  mkdir -p "$knowledge_path/raw"
+  [ -f "$knowledge_path/raw/README.md" ] \
+    || cp "$source_root/seed/knowledge/raw/README.md" "$knowledge_path/raw/README.md"
+
+  if [ ! -e "$bootstrap/.git" ]; then
+    git init --quiet "$bootstrap"
+    git -C "$bootstrap" symbolic-ref HEAD refs/heads/main
+  fi
+}
+
+create_initial_local_commit() {
+  local bootstrap
+  bootstrap="$(agent_workspace_for "$1")"
+  local knowledge_dir="$2"
+  local knowledge_name="${knowledge_dir#agent_bootstrap/}"
+
+  if git -C "$bootstrap" rev-parse --verify HEAD >/dev/null 2>&1; then
+    return
+  fi
+
+  git -C "$bootstrap" add -- .gitignore project "$knowledge_name"
+  git -C "$bootstrap" \
+    -c user.name="AI Framework Bootstrap" \
+    -c user.email="ai-framework@local" \
+    commit --quiet -m "chore: initialize local project records"
+}
+
+ensure_inner_ignore() {
+  local bootstrap="$1"
+  local source_root="$2"
+  local ignore_file="$bootstrap/.gitignore"
+  local required_line
+
+  while IFS= read -r required_line || [ -n "$required_line" ]; do
+    case "$required_line" in
+      ''|'#'*) continue ;;
+    esac
+    grep -Fqx "$required_line" "$ignore_file" || printf '%s\n' "$required_line" >> "$ignore_file"
+  done < "$source_root/seed/agent-bootstrap.gitignore"
+}
+
+update_project_launcher() {
+  local target="$1"
+  local source_root="$2"
+  local launcher="$target/tools/ai-framework"
+  local launcher_temp
+
+  if [ -f "$launcher" ] \
+    && cmp -s "$source_root/seed/tools/ai-framework" "$launcher" \
+    && [ -x "$launcher" ]; then
+    LAUNCHER_UPDATED="false"
+    return
+  fi
+
+  mkdir -p "$target/tools"
+  launcher_temp="$(mktemp "$target/tools/.ai-framework.XXXXXX")"
+  cp "$source_root/seed/tools/ai-framework" "$launcher_temp"
+  chmod +x "$launcher_temp"
+  mv "$launcher_temp" "$launcher"
+  LAUNCHER_UPDATED="true"
+}
+
+write_lock() {
+  local target="$1"
+  local source="$2"
+  local ref="$3"
+  local commit="$4"
+  local project_name="$5"
+  local knowledge_dir="$6"
+
+  cat > "$target/ai-framework.lock" <<EOF
+source: $source
+ref: $ref
+commit: $commit
+install_dir: agent_bootstrap
+project_name: $project_name
+knowledge_dir: $knowledge_dir
+EOF
+}
+
+command_init() {
+  local target=""
+  local source=""
+  local ref=""
+  local project_name=""
+
+  while [ "$#" -gt 0 ]; do
+    case "$1" in
+      --target) target="$2"; shift 2 ;;
+      --source) source="$2"; shift 2 ;;
+      --ref) ref="$2"; shift 2 ;;
+      --project-name) project_name="$2"; shift 2 ;;
+      *) fail "unknown init option: $1" ;;
+    esac
+  done
+
+  [ -n "$target" ] || fail "--target is required"
+  [ -n "$source" ] || fail "--source is required"
+  [ -n "$ref" ] || fail "--ref is required"
+  [ -d "$target" ] || fail "target does not exist: $target"
+  target="$(cd "$target" && pwd)"
+  require_git_repository "$target"
+  require_primary_worktree "$target"
+  project_name="$(resolve_project_name "$target" "$project_name")"
+  local knowledge_dir
+  knowledge_dir="$(knowledge_dir_for "$project_name")"
+  [ ! -e "$target/ai-framework.lock" ] || fail "target already has ai-framework.lock; use sync instead"
+  local bootstrap
+  bootstrap="$(agent_workspace_for "$target")"
+  [ ! -e "$bootstrap" ] || fail "primary worktree already has agent_bootstrap/; refuse to take over an existing local control plane"
+
+  if [ -e "$target/AGENTS.md" ]; then
+    fail "target already has AGENTS.md; add the AI Framework entry explicitly before initialization"
+  fi
+
+  trap cleanup_release EXIT
+  fetch_release "$source" "$ref" ""
+
+  ensure_outer_ignore "$target"
+  cp "$RELEASE_DIR/seed/root-AGENTS.md" "$target/AGENTS.md"
+  update_project_launcher "$target" "$RELEASE_DIR"
+  write_lock "$target" "$source" "$ref" "$RESOLVED_COMMIT" "$project_name" "$knowledge_dir"
+  seed_if_missing "$target" "$RELEASE_DIR" "$knowledge_dir"
+  replace_shared_runtime "$target" "$RELEASE_DIR"
+  create_initial_local_commit "$target" "$knowledge_dir"
+  echo "initialized AI Framework at $bootstrap"
+  echo "created the initial local project-record commit"
+  echo "commit AGENTS.md, PROJECT-CONTEXT.md, ai-framework.lock, tools/ai-framework, and .gitignore in the target code repository"
+}
+
+command_sync() {
+  local target="."
+  local requested_ref=""
+  local use_latest="false"
+
+  while [ "$#" -gt 0 ]; do
+    case "$1" in
+      --target) target="$2"; shift 2 ;;
+      --ref)
+        [ "$#" -ge 2 ] || fail "missing value for --ref"
+        requested_ref="$2"
+        shift 2
+        ;;
+      --latest) use_latest="true"; shift ;;
+      *) fail "unknown sync option: $1" ;;
+    esac
+  done
+
+  [ -z "$requested_ref" ] || [ "$use_latest" = "false" ] \
+    || fail "use either --ref or --latest, not both"
+
+  [ -d "$target" ] || fail "target does not exist: $target"
+  target="$(cd "$target" && pwd)"
+  require_git_repository "$target"
+  require_primary_worktree "$target"
+  reject_linked_agent_workspace "$target"
+  local lock_file="$target/ai-framework.lock"
+  [ -f "$lock_file" ] || fail "missing ai-framework.lock; run init first"
+
+  local source ref commit install_dir project_name knowledge_dir
+  source="$(lock_value "$lock_file" source)"
+  ref="$(lock_value "$lock_file" ref)"
+  commit="$(lock_value "$lock_file" commit)"
+  install_dir="$(lock_value "$lock_file" install_dir)"
+  project_name="$(lock_value "$lock_file" project_name)"
+  knowledge_dir="$(lock_value "$lock_file" knowledge_dir)"
+  [ -n "$source" ] || fail "lock is missing source"
+  [ -n "$ref" ] || fail "lock is missing ref"
+  [ "$install_dir" = "agent_bootstrap" ] || fail "unsupported install_dir: $install_dir"
+  if [ -z "$project_name" ] || [ -z "$knowledge_dir" ]; then
+    project_name="$(resolve_project_name "$target" "")"
+    knowledge_dir="agent_bootstrap/knowledge"
+  else
+    validate_knowledge_dir "$project_name" "$knowledge_dir"
+  fi
+
+  if [ "$use_latest" = "true" ]; then
+    requested_ref="$(latest_release_ref "$source")"
+  fi
+  if [ -n "$requested_ref" ]; then
+    ref="$requested_ref"
+    commit=""
+  fi
+
+  trap cleanup_release EXIT
+  fetch_release "$source" "$ref" "$commit"
+  seed_if_missing "$target" "$RELEASE_DIR" "$knowledge_dir"
+  replace_shared_runtime "$target" "$RELEASE_DIR"
+  update_project_launcher "$target" "$RELEASE_DIR"
+  if [ -n "$requested_ref" ]; then
+    write_lock "$target" "$source" "$ref" "$RESOLVED_COMMIT" "$project_name" "$knowledge_dir"
+    echo "upgraded lock to $ref ($RESOLVED_COMMIT)"
+  fi
+  echo "synchronized AI Framework $RESOLVED_COMMIT"
+  if [ "$LAUNCHER_UPDATED" = "true" ]; then
+    echo "updated tools/ai-framework; commit it in the target code repository"
+  fi
+}
+
+command_status() {
+  local target="."
+
+  while [ "$#" -gt 0 ]; do
+    case "$1" in
+      --target) target="$2"; shift 2 ;;
+      *) fail "unknown status option: $1" ;;
+    esac
+  done
+
+  target="$(cd "$target" && pwd)"
+  require_git_repository "$target"
+  reject_linked_agent_workspace "$target"
+  local lock_file="$target/ai-framework.lock"
+  local workspace version_file
+  workspace="$(agent_workspace_for "$target")"
+  version_file="$workspace/FRAMEWORK-VERSION"
+  [ -f "$lock_file" ] || fail "missing ai-framework.lock"
+  echo "workspace: $workspace"
+  echo "lock: $(lock_value "$lock_file" ref) ($(lock_value "$lock_file" commit))"
+  echo "project: $(lock_value "$lock_file" project_name)"
+  echo "knowledge: $(lock_value "$lock_file" knowledge_dir)"
+  if [ -f "$version_file" ]; then
+    echo "installed: $(lock_value "$version_file" source_commit)"
+  else
+    echo "installed: missing"
+  fi
+}
+
+command_path() {
+  local target="."
+
+  while [ "$#" -gt 0 ]; do
+    case "$1" in
+      --target) target="$2"; shift 2 ;;
+      *) fail "unknown path option: $1" ;;
+    esac
+  done
+
+  target="$(cd "$target" && pwd)"
+  require_git_repository "$target"
+  reject_linked_agent_workspace "$target"
+  local lock_file="$target/ai-framework.lock"
+  local workspace knowledge_dir knowledge_path
+  [ -f "$lock_file" ] || fail "missing ai-framework.lock"
+  workspace="$(agent_workspace_for "$target")"
+  knowledge_dir="$(lock_value "$lock_file" knowledge_dir)"
+  [ -n "$knowledge_dir" ] || knowledge_dir="agent_bootstrap/knowledge"
+  knowledge_path="$(knowledge_path_for "$target" "$knowledge_dir")"
+  printf 'workspace: %s\n' "$workspace"
+  printf 'framework: %s\n' "$workspace"
+  printf 'project: %s/project\n' "$workspace"
+  printf 'knowledge: %s\n' "$knowledge_path"
+}
+
+root_agent_is_legacy_entry() {
+  local target="$1"
+  local bootstrap
+  bootstrap="$(agent_workspace_for "$target")"
+  [ -f "$target/AGENTS.md" ] && [ -f "$bootstrap/AGENTS.md" ] \
+    && cmp -s "$target/AGENTS.md" "$bootstrap/AGENTS.md"
+}
+
+migration_preflight() {
+  local target="$1"
+  local bootstrap
+  bootstrap="$(agent_workspace_for "$target")"
+  local tracked_bootstrap
+  local lock_file="$target/ai-framework.lock"
+
+  [ -d "$bootstrap" ] || fail "primary worktree has no agent_bootstrap/; use init instead"
+
+  if [ -f "$lock_file" ]; then
+    if [ -n "$(lock_value "$lock_file" project_name)" ] \
+      && [ -n "$(lock_value "$lock_file" knowledge_dir)" ]; then
+      fail "target already uses the current layout; use sync instead"
+    fi
+  fi
+
+  tracked_bootstrap="$(git -C "$target" ls-files -- agent_bootstrap)"
+  if [ -n "$tracked_bootstrap" ]; then
+    fail "target tracks agent_bootstrap/ in the code repository; remove it from the index explicitly before migration"
+  fi
+}
+
+command_migrate() {
+  local target=""
+  local source=""
+  local ref=""
+  local mode=""
+  local replace_shared="false"
+  local replace_root_agent="false"
+  local project_name=""
+
+  while [ "$#" -gt 0 ]; do
+    case "$1" in
+      --target) target="$2"; shift 2 ;;
+      --source) source="$2"; shift 2 ;;
+      --ref) ref="$2"; shift 2 ;;
+      --project-name) project_name="$2"; shift 2 ;;
+      --dry-run) mode="dry-run"; shift ;;
+      --apply) mode="apply"; shift ;;
+      --replace-shared) replace_shared="true"; shift ;;
+      --replace-root-agent) replace_root_agent="true"; shift ;;
+      *) fail "unknown migrate option: $1" ;;
+    esac
+  done
+
+  [ -n "$target" ] || fail "--target is required"
+  [ -n "$source" ] || fail "--source is required"
+  [ -n "$ref" ] || fail "--ref is required"
+  [ -n "$mode" ] || fail "choose --dry-run or --apply"
+  [ -d "$target" ] || fail "target does not exist: $target"
+  target="$(cd "$target" && pwd)"
+  require_git_repository "$target"
+  require_primary_worktree "$target"
+  project_name="$(resolve_project_name "$target" "$project_name")"
+  local knowledge_dir
+  knowledge_dir="$(knowledge_dir_for "$project_name")"
+  migration_preflight "$target"
+
+  trap cleanup_release EXIT
+  fetch_release "$source" "$ref" ""
+
+  local bootstrap
+  bootstrap="$(agent_workspace_for "$target")"
+  local legacy_knowledge="$bootstrap/knowledge"
+  local target_knowledge
+  target_knowledge="$(knowledge_path_for "$target" "$knowledge_dir")"
+  if [ "$mode" = "apply" ] && [ -d "$legacy_knowledge" ] && [ -e "$target_knowledge" ]; then
+    fail "both legacy and target knowledge directories exist; merge them explicitly before migration"
+  fi
+
+  if [ "$mode" = "dry-run" ]; then
+    cat <<EOF
+Migration dry-run for: $target
+Release commit: $RESOLVED_COMMIT
+
+Will preserve:
+  agent_bootstrap/project/
+  agent_bootstrap/knowledge/ -> $knowledge_dir/ (when present)
+  agent_bootstrap/.git/ (if present)
+
+Will replace after explicit confirmation:
+  agent_bootstrap/README.md
+  agent_bootstrap/agents/AGENTS.md
+  agent_bootstrap/agents/roles/
+  agent_bootstrap/governance/
+  agent_bootstrap/templates/
+
+Will create or update:
+  AGENTS.md
+  PROJECT-CONTEXT.md
+  ai-framework.lock
+  tools/ai-framework (updated to this release)
+  .gitignore entry: /agent_bootstrap/
+
+An existing legacy ai-framework.lock without project_name / knowledge_dir will be upgraded.
+
+Legacy agent_bootstrap/AGENTS.md will be archived under .migration-archive/.
+EOF
+    echo "Legacy shared-file customizations cannot be inferred automatically; review them before replacement."
+    if [ -e "$target/AGENTS.md" ] && ! root_agent_is_legacy_entry "$target"; then
+      echo "Root AGENTS.md has custom content and will require --replace-root-agent on apply."
+    fi
+    echo "Run again with: --apply --replace-shared"
+    return
+  fi
+
+  [ "$replace_shared" = "true" ] || fail "--apply requires --replace-shared because legacy shared-file customizations cannot be inferred safely"
+
+  ensure_outer_ignore "$target"
+  if [ -e "$target/AGENTS.md" ]; then
+    if ! root_agent_is_legacy_entry "$target" && [ "$replace_root_agent" != "true" ]; then
+      fail "refusing to replace a customized root AGENTS.md"
+    fi
+  fi
+  cp "$RELEASE_DIR/seed/root-AGENTS.md" "$target/AGENTS.md"
+  update_project_launcher "$target" "$RELEASE_DIR"
+  write_lock "$target" "$source" "$ref" "$RESOLVED_COMMIT" "$project_name" "$knowledge_dir"
+
+  local legacy_context="$bootstrap/agents/PROJECT-CONTEXT.md"
+  if [ ! -f "$target/PROJECT-CONTEXT.md" ] && [ -f "$legacy_context" ]; then
+    cp "$legacy_context" "$target/PROJECT-CONTEXT.md"
+  fi
+  if [ -d "$legacy_knowledge" ] && [ "$legacy_knowledge" != "$target_knowledge" ]; then
+    mv "$legacy_knowledge" "$target_knowledge"
+  fi
+  seed_if_missing "$target" "$RELEASE_DIR" "$knowledge_dir"
+
+  if [ -f "$bootstrap/AGENTS.md" ]; then
+    local archive_dir="$bootstrap/.migration-archive/$(date -u +%Y%m%dT%H%M%SZ)"
+    mkdir -p "$archive_dir"
+    mv "$bootstrap/AGENTS.md" "$archive_dir/AGENTS.md"
+  fi
+  replace_shared_runtime "$target" "$RELEASE_DIR"
+  if [ "$LAUNCHER_UPDATED" = "true" ]; then
+    echo "updated tools/ai-framework"
+  fi
+  echo "migrated AI Framework at $bootstrap"
+  echo "review and commit AGENTS.md, PROJECT-CONTEXT.md, ai-framework.lock, tools/ai-framework, and .gitignore in the target code repository"
+}
+
+COMMAND="${1:-}"
+[ -n "$COMMAND" ] || { usage; exit 1; }
+shift
+
+case "$COMMAND" in
+  init) command_init "$@" ;;
+  sync) command_sync "$@" ;;
+  status) command_status "$@" ;;
+  path) command_path "$@" ;;
+  migrate) command_migrate "$@" ;;
+  -h|--help|help) usage ;;
+  *) fail "unknown command: $COMMAND" ;;
+esac
