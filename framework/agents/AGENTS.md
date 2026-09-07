@@ -37,6 +37,10 @@ assigned Sprint or Task and linked Decisions
 本地 DP 必须指定 Local Decision Owner。Agent 只有在当前工作明确授权其代表该 Owner 时，才能接受、拒绝或修订本地 DP。AI Framework 合约变更、高影响例外、受保护分支、发布、生产和硬件操作等需要人工决定或授权的事项，必须记录明确的人工来源、范围和日期。Agent 不得自行取得或代替人工授权；目标工程中的授权也不能扩展为修改 AI Framework 源合约的权限。
 
 
+## User-facing Communication
+
+面向用户的功能讨论、方案说明、问题诊断、验收汇报和审批请求，先说明问题、拟议变化和实际影响，再提供必要技术细节。常见术语直接使用；生僻术语、底层机制和内部概念结合当前问题解释，不以内部编号或技术细节代替影响说明。请求决策时说明推荐方案、理由，以及同意后会执行什么。简单事项简短说明，不强制套用完整表格。
+
 ## Instruction Priority
 
 ```text
@@ -96,7 +100,7 @@ Ready → In Progress → In Review → Done
 
 涉及环境搭建、部署、发布或其他目标环境变更时，项目经理、平台工程师和相关验收者按需读取 `<agent-workspace>/governance/deployment-governance.md`。目标环境 Gate 验证部署结果，不作为每条环境操作的执行许可；部署授权、执行 attempt 和重新授权规则以该合约为准。
 
-Gate 的适用性、Owner、输入和通过条件必须记录在 Task 或 Sprint 中。Gate 只验证已批准范围；发现需求、架构或合同变化时，回到 `Issue → Product Manager review → local DP → Sprint/Task update`。
+Gate 的适用性、Owner、输入和通过条件必须记录在 Task 或 Sprint 中。Gate 只验证已批准范围；新增阻塞门槛必须说明需求依据或具体风险，涉及验收标准、需求、架构或合同变化时，回到 `Issue → Product Manager review → local DP → Sprint/Task update`。
 
 合同冻结是 Sprint `Ready` 条件，不是交付 Gate。项目可以增加专属 Gate，但不得替代三类标准 Gate。
 
@@ -119,6 +123,8 @@ Task 的状态、交付、验证和验收变化以 Task 正文为准。实现错
 
 ## Test Proportion Rules
 
+验收覆盖已确认标准及修改涉及的实际风险，优先执行定向验证；只有影响扩大时才扩大回归。满足必要标准后推进，不为追求更完整继续增加检查；不得降低已确认标准、跳过必要失败路径或将实际缺陷改称可选改进。
+
 - **Quick：** 文档、文案、小型重构或低风险局部修改，运行编译、格式检查或受影响的最小验证。
 - **Module：** API、页面、服务或一般模块行为，运行受影响模块的测试，以及适用的合同或集成测试。
 - **High：** 认证、授权、支付、数据迁移、存储、删除、外部 API、队列、发布或项目声明的其他高风险范围，运行定向失败路径验证和相关回归，并在 Sprint 收尾完成必要的端到端或目标环境验证。
@@ -126,6 +132,8 @@ Task 的状态、交付、验证和验收变化以 Task 正文为准。实现错
 普通 Task 的测试证据记录在 Task 中；只有 High 风险变更、Sprint 终验或项目约定要求时才创建独立 Test Plan / Test Report。测试记录必须写明命令或步骤、结果以及 skipped/未执行项。任何 skipped 都必须说明原因、验收影响和处置；命中必要验收项时，Task 不得 `Done`，Sprint Review 不得 `Passed`。
 
 Test Report 的 `Failed` 表示测试已执行但不满足条件，`Blocked` 表示因依赖、权限或环境无法完成，二者不得混用。重试、波动结果和首次失败必须保留，不得只记录最终一次通过。
+
+验证工具异常导致的未完成检查，不直接判为产品缺陷，也不能视为通过。既有授权内允许修复工具或使用等价方法；不改变验收标准、覆盖范围和操作权限的技术调整，不单独创建 LDP 或申请授权。记录异常及替代方法的等价依据，必要检查仍须完成。
 
 ## Safety and Repository Boundaries
 

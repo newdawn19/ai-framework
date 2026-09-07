@@ -10,6 +10,12 @@
 **Related Sprints:** 无则写“无”
 **Supersedes / Superseded by:** 无则写“无”
 
+## Decision Summary
+
+- **当前问题和实际影响：**
+- **推荐方案及主要取舍：**
+- **本次需要确认什么、同意后做什么：**
+
 ## Context
 
 为什么当前工作需要本地决定，以及已验证事实。

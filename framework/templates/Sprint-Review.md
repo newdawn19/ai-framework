@@ -9,6 +9,12 @@
 
 Sprint 目标与最终可演示结果。
 
+逐项引用原 Sprint 的验收项编号，不另建验收标准。
+
+| 验收项 | 结果 | 证据或未通过原因 |
+| --- | --- | --- |
+| AC-01（链接到原 Sprint） | 通过／未通过／未测试 | 证据链接或具体原因 |
+
 ## Traceability
 
 | Task | Status | Commit | Acceptance | Skipped / Risk |
