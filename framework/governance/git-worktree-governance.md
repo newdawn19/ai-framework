@@ -62,7 +62,8 @@ linked worktree 不承载 `agent_bootstrap/`。`status` 或 `path` 失败时，�
 - 提交仅包含该 Task 的相关修改。
 - Task worktree 在交付、验收和合并后验证时没有未提交或未跟踪的修改；项目明确忽略的构建产物除外。
 - Task 已记录 delivery commit、其集成基线 commit，并完成对该 delivery commit 的独立验收。
-- 合并前必须确认当前集成分支 HEAD。若它不同于 delivery commit 记录的集成基线，Task 分支必须先按项目约定更新到该 HEAD；rebase、冲突解决或其他改变交付内容的操作会产生新的 delivery commit，使原独立验收失效，必须重新进入 `In Review` 并完成独立验收。
+- 合并前必须确认当前集成分支 HEAD。若它不同于记录的集成基线，先检查新增提交对本 Task 的代码、依赖、合同和验收范围的影响及合并冲突；不能仅因 HEAD 前进就要求更新 Task 基线或整套重验。无相关影响且可无冲突合并时，由 Acceptance Owner 记录证据复用依据，保留原 delivery commit，按项目约定合并并做最小合并后验证。
+- 存在相关影响、冲突或无法证明无影响时，按项目约定更新基线或形成候选集成结果，绑定实际待验 commit 并由 Acceptance Owner 做定向独立复验；影响扩大时扩大回归。改变交付内容后重新进入 `In Review`，未受影响的历史证据可按共享规则复用，不将旧验收结论直接套在新 commit 上。最终合并前再次核对集成 HEAD，发生变化时按同一规则评估。
 - Task commit 不包含合约升级或无关项目记录；合约升级必须是独立依赖更新。
 
 合并后必须记录 merge commit、合并前的集成分支 HEAD，并在干净 worktree 中运行 Task 定义的最小合并后验证。

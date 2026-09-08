@@ -5,7 +5,10 @@
 **Trigger:** High Risk / Sprint Closure / Project Required
 **Test Owner:**
 **Gate Owner:**
+**Approved by / Date:** 指定 Acceptance Owner 或 Gate Owner / YYYY-MM-DD；未确认写“待确认”。
 **Target commit / build:**
+
+范围内测试计划由指定 Acceptance Owner 或 Gate Owner 确认，`Approved` 仅表示测试计划已确认，不新增执行权限或人工审批。只有涉及已批准范围、验收标准或权限等决策边界的变化，才按共享合约请求相应决定或授权。
 
 ## Scope
 

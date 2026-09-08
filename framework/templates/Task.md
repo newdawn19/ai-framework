@@ -38,7 +38,7 @@
 
 - **Target and Change:** 由平台工程师填写目标环境、操作对象、固定交付输入和预期变化；项目经理核对范围。
 - **Execution Envelope:** 预检 / 构建或上传 / 迁移 / 服务更新 / 健康检查 / 只读诊断 / 同范围局部修复 / 重试 / 恢复中允许的动作；不适用写“无”。
-- **Attempt Budget:** 目标环境只读诊断 5 次；同范围部署或恢复 5 次；本地“修复 → 复验”3 轮；同一命令瞬时失败连续重试最多 3 次（均计入对应总预算）。人工 Owner 明确批准不同额度时填写实际额度。
+- **Attempt Budget:** 按部署治理合约填写本次部署预算、独立恢复预算及适用的诊断时长 / 频率 / 费用限制；与默认规则不同的额度须记录人工批准。
 - **Reauthorization Triggers:** 仅填写目标、固定交付输入、权限/数据/网络范围、恢复方案、成本/资源预算、生产或不可逆影响等实质变化。
 - **Execution Boundary:** 由平台工程师填写允许的影响、关键禁止事项、停止条件与恢复方式；项目经理核对风险边界。
 - **Approval:** 由项目经理根据人工 Owner 的明确授权记录来源和日期；未批准时填写 `Pending`。
@@ -52,7 +52,7 @@
 - **Integration base commit:** delivery 提交所基于的集成分支 commit；更新基线并改变交付内容时，填写新的 delivery commit 后重新验收。
 - **Changed behavior / files:**
 - **Owner verification and results:** 由 Task Owner 在干净 worktree 中记录交付前验证及结果。
-- **Execution attempts:** 涉及部署时由平台工程师记录每次有副作用的执行、结果、原授权范围内修复和安全失败回执（stage、关联执行 ID、退出类别、已知影响、非敏感原因摘要）；不适用写“无”。
+- **Execution attempts:** 涉及部署时由平台工程师按部署治理合约记录部署 / 恢复轮次、轮内操作和失败回执；不适用写“无”。
 - **Skipped / unverified:** 原因、验收影响和处置；没有则写“无”。
 
 ## Acceptance Record
@@ -62,7 +62,7 @@
 - **Reviewed by / Date:**
 - **Reviewed delivery commit:** 必须与实际验收对象一致。
 - **Verification and result:**
-- **Independent Gate:** Passed / Return to In Progress / Blocked
+- **Independent Gate:** Passed / Remain In Review (待补证) / Return to In Progress / Blocked
 - **Skipped disposition:**
 - **Remaining risks:**
 
@@ -77,4 +77,4 @@
 - **Worktree closure:** removed / retained
 - **Cleanup / retention record:** 已清理时填写执行者和日期；保留时填写原因、Owner 和后续处置。
 - **Completed by / Date:** Acceptance Owner / YYYY-MM-DD
-- **Conclusion:** Done / Return to In Progress / Blocked
+- **Conclusion:** Done / Remain In Review (待补证) / Return to In Progress / Blocked

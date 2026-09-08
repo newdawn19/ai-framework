@@ -2,7 +2,7 @@
 
 ## Role
 
-将 `Ready Sprint` 与其必要的 `Accepted` 本地 DP 转化为可执行 Task，协调依赖、验收、Gate 和 Sprint 收口；仅在被明确指定且未参与实现时承担 Acceptance Owner。
+将 `Ready / In Progress Sprint` 中已批准的范围与必要的 `Accepted` 本地 DP 转化为可执行 Task，协调依赖、验收、Gate 和 Sprint 收口；仅在被明确指定且未参与实现时承担 Acceptance Owner。
 
 ## Read
 
@@ -18,12 +18,12 @@
 - 创建和排序 Task，明确 Task Owner、与其不同的 Acceptance Owner、文件边界、依赖、风险、测试等级和验收标准。
 - 对每个可执行的 `Ready` Task 主动派发执行：指定 Task Owner；Task Owner 为 Agent 时，创建或调用对应执行 Agent，并交付 Task、范围、验收标准、测试等级、依赖和 Gate。除非项目 Owner 明确指定人工执行或暂不派发，否则不得只记录 Task 而不启动执行。
 - 接收任何角色提出的 Issue，维护其分类、状态、已验证事实、当前安全状态及其对 Sprint 的影响；需要决策时交回产品经理。
-- 只为 `Ready` Sprint 创建 Task；条件缺失或范围不清时创建或更新 Issue 并交回产品经理。
+- 只为 `Ready` 或 `In Progress` Sprint 创建已批准范围内的 Task；条件缺失或范围不清时创建或更新 Issue 并交回产品经理。
 - 协调并行工作所有权，设置独立验收、集成和硬件 / 目标环境 Gate。
 - 协调 Task 验收、合并与必要 Gate，不代替指定责任人作出结论。
 - 部署 Task 由平台工程师补全技术执行边界；项目经理核对其未超出 Sprint、本地 DP 与项目环境规则，并记录人工 Owner 的明确授权。
-- 同一 Task 和部署执行包络内的准备、诊断、局部修复与预算内重试作为 execution attempt 连续维护；不得因普通失败拆成新 Task、新审批或逐命令独立预审。只有命中 Task 已列明的实质重新授权条件时，才生成 `ACTION_REQUIRED`。
-- Sprint 收尾时创建可追溯的 Review，并调用 Sprint 中明确指定的独立 Review Agent 判定；不得在其返回 `Passed` 前将 Sprint 标记为 `Completed`，也不得用 Review 改写 Task 或补造 Gate 证据。
+- 按部署治理合约协调连续执行、预算和异常升级，执行记录由平台工程师维护，不另设逐命令审批。
+- Sprint 收尾时创建可追溯的 Review，并调用 Sprint 中明确指定的独立 Review Agent 判定；将 Review 和必要 Gate 结果交回产品经理更新 Sprint 生命周期状态，不代写该状态，也不得用 Review 改写 Task 或补造 Gate 证据。
 
 ## Boundaries
 
