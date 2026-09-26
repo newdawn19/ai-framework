@@ -1,10 +1,12 @@
 # <Task-ID>: <Task Name>
 
-> 基本信息、范围和验收标准由项目经理创建并维护；Task Owner 维护执行与交付记录；Acceptance Owner 只维护验收和最终完成结论。
+> 基本信息、范围和验收标准由项目经理创建并维护；Task Owner 维护执行与交付记录；标准验收由 Acceptance Owner 维护验收和最终完成结论，轻量核对的完成责任按共享合约归 Task Owner。
 
 **Status:** Ready / In Progress / In Review / Done / Blocked
 **Task Owner:**
 **Acceptance Owner:**
+**Verification Mode:** Standard / Lightweight（适用条件见共享合约；Lightweight 时 Acceptance Owner 填“不适用”）
+**Mode rationale:** 轻量核对时简述低风险依据；Standard 可写“标准验收”。
 **Created / Updated:** YYYY-MM-DD / YYYY-MM-DD
 **Workstream:**
 **Test Level:** Quick / Module / High
@@ -52,23 +54,26 @@
 - **Integration base commit:** delivery 提交所基于的集成分支 commit；更新基线并改变交付内容时，填写新的 delivery commit 后重新验收。
 - **Changed behavior / files:**
 - **Owner verification and results:** 由 Task Owner 在干净 worktree 中记录交付前验证及结果。
+- **Lightweight direct checks:** Lightweight 时填写修改点、直接核对项和结果；Standard 写“不适用”。
 - **Execution attempts:** 涉及部署时由平台工程师按部署治理合约记录部署 / 恢复轮次、轮内操作和失败回执；不适用写“无”。
 - **Skipped / unverified:** 原因、验收影响和处置；没有则写“无”。
 
 ## Acceptance Record
 
-> 仅由与 Task Owner 不同的 Acceptance Owner 维护。
+> 标准验收时仅由与 Task Owner 不同的 Acceptance Owner 维护。Lightweight 时本节各字段填写 `N/A - Lightweight`，并在 Delivery Record 中记录直接核对结果；不另建验收报告。
 
 - **Reviewed by / Date:**
 - **Reviewed delivery commit:** 必须与实际验收对象一致。
 - **Verification and result:**
+- **User-observable evidence:** 在明确 build/commit 与真实目标环境上实际看到的结果；不适用写“无”。
+- **Unobserved internal steps / accepted risk:** 未直接观测的内部步骤、为何不阻塞、接受范围与 Owner；没有则写“无”。
 - **Independent Gate:** Passed / Remain In Review (待补证) / Return to In Progress / Blocked
 - **Skipped disposition:**
 - **Remaining risks:**
 
 ## Merge and Completion Record
 
-> 合并信息由实际执行者记录；最终结论由 Acceptance Owner 核对并维护。
+> 合并信息由实际执行者记录；标准验收最终结论由 Acceptance Owner 核对并维护，Lightweight 由 Task Owner 维护。
 
 - **Merge required:** Yes / No
 - **Merge commit:** 不需要合并时写“无”。
@@ -76,5 +81,5 @@
 - **Post-merge verification:** 在干净 worktree 中执行的命令/步骤、结果；不适用写“无”。
 - **Worktree closure:** removed / retained
 - **Cleanup / retention record:** 已清理时填写执行者和日期；保留时填写原因、Owner 和后续处置。
-- **Completed by / Date:** Acceptance Owner / YYYY-MM-DD
+- **Completed by / Date:** Acceptance Owner（Lightweight 为 Task Owner）/ YYYY-MM-DD
 - **Conclusion:** Done / Remain In Review (待补证) / Return to In Progress / Blocked

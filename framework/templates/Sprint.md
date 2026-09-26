@@ -45,7 +45,7 @@
 
 ## Project Manager Output
 
-项目经理创建独立 Task 和 Task Index，记录 Task Owner、Acceptance Owner、文件边界、依赖、风险、测试等级与附加 Gate。
+项目经理创建独立 Task 和 Task Index，记录 Task Owner、Verification Mode、文件边界、依赖、风险、测试等级与附加 Gate。Standard Task 指定不同的 Acceptance Owner；Lightweight Task 按共享合约记录“不适用”和低风险理由。
 
 - **Task Index:** `<agent-workspace>/project/tasks/<sprint-id>/README.md`
 

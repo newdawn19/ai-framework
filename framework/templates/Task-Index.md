@@ -6,9 +6,9 @@
 
 本索引只保存导航和派生摘要。Task 状态、commit、测试和验收以各 Task 正文为准；Sprint 目标、范围和生命周期以 Sprint 正文为准。
 
-| Task | Status | Task Owner | Acceptance Owner | Additional Gates | Dependencies |
-| --- | --- | --- | --- | --- | --- |
-| <Task-ID> | Ready | | | None | None |
+| Task | Status | Verification Mode | Task Owner | Acceptance Owner | Additional Gates | Dependencies |
+| --- | --- | --- | --- | --- | --- | --- |
+| <Task-ID> | Ready | Standard / Lightweight | | | None | None |
 
 ## Maintenance
 

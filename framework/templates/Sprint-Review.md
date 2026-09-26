@@ -17,9 +17,11 @@ Sprint 目标与最终可演示结果。
 
 ## Traceability
 
-| Task | Status | Commit | Acceptance | Skipped / Risk |
+| Task | Status | Commit | Acceptance / Lightweight check | Skipped / Risk |
 | --- | --- | --- | --- | --- |
-| <Task-ID> | Done / In Review / Blocked | delivery + merge hash / committed delivery record | 验收人、日期、结论 | 无 / 处置 |
+| <Task-ID> | Done / In Review / Blocked | delivery + merge hash / committed delivery record | 标准：验收人、日期、结论；Lightweight：Task Owner、日期、直接核对结论 | 无 / 处置 |
+
+Lightweight Task 的 Acceptance Owner 为“不适用（轻量核对）”不构成缺失。Sprint Review 核对其低风险理由、delivery commit 与直接核对记录；发现不再符合适用条件时，退回并转为标准验收。
 
 ## Gate Results
 

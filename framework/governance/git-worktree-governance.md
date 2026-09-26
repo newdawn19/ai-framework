@@ -48,10 +48,12 @@ linked worktree 不承载 `agent_bootstrap/`。`status` 或 `path` 失败时，�
 
 ## 3. Task 的 Git 交付
 
+下列独立验收及 `In Review` 要求适用于标准验收 Task。共享合约允许的轻量核对 Task，以 Task Owner 的核对记录替代独立验收；需要合并时只检查合并后相关修改，完成责任仍归 Task Owner。分支权限、交付 commit、干净工作树和无关修改保护要求不变。
+
 1. 从当前集成基线创建 Task 分支和隔离 worktree。
 2. 在 Task worktree 中完成实现、工程师验证和范围内提交；交付、验收和合并后验证前，工作树必须干净。
-3. 在 Task 中记录 delivery commit 及其集成基线 commit，并转为 `In Review`。
-4. 独立验收通过后，按项目声明的方式合并到集成分支。
+3. 在 Task 中记录 delivery commit 及其集成基线 commit：标准验收 Task 转为 `In Review`；轻量核对 Task 记录适用理由、修改点和直接核对结果后，可按共享合约直接完成。
+4. 标准验收 Task 在独立验收通过后合并；轻量核对 Task 在 Task Owner 完成直接核对后，按项目声明的方式合并到集成分支。
 5. 在 Task 中记录 merge commit 和最小合并后验证。
 6. Task Owner 确认 worktree 没有未处理修改、分支已经合并且不再需要后，可按项目权限自行清理该 Task 的 worktree 和已合并分支，并在 Task 中记录结果。
 
@@ -61,9 +63,10 @@ linked worktree 不承载 `agent_bootstrap/`。`status` 或 `path` 失败时，�
 
 - 提交仅包含该 Task 的相关修改。
 - Task worktree 在交付、验收和合并后验证时没有未提交或未跟踪的修改；项目明确忽略的构建产物除外。
-- Task 已记录 delivery commit、其集成基线 commit，并完成对该 delivery commit 的独立验收。
-- 合并前必须确认当前集成分支 HEAD。若它不同于记录的集成基线，先检查新增提交对本 Task 的代码、依赖、合同和验收范围的影响及合并冲突；不能仅因 HEAD 前进就要求更新 Task 基线或整套重验。无相关影响且可无冲突合并时，由 Acceptance Owner 记录证据复用依据，保留原 delivery commit，按项目约定合并并做最小合并后验证。
-- 存在相关影响、冲突或无法证明无影响时，按项目约定更新基线或形成候选集成结果，绑定实际待验 commit 并由 Acceptance Owner 做定向独立复验；影响扩大时扩大回归。改变交付内容后重新进入 `In Review`，未受影响的历史证据可按共享规则复用，不将旧验收结论直接套在新 commit 上。最终合并前再次核对集成 HEAD，发生变化时按同一规则评估。
+- 标准验收 Task 已记录 delivery commit、其集成基线 commit，并完成对该 delivery commit 的独立验收；轻量核对 Task 已记录相同 commit、轻量理由、修改点和直接核对结果。
+- 合并前必须确认当前集成分支 HEAD。若它不同于记录的集成基线，先检查新增提交对本 Task 的代码、依赖、合同和验收范围的影响及合并冲突；不能仅因 HEAD 前进就要求更新 Task 基线或整套重验。无相关影响且可无冲突合并时，标准验收由 Acceptance Owner 记录证据复用依据；轻量核对由 Task Owner 记录直接核对仍适用的依据。二者均保留原 delivery commit，按项目约定合并并做最小合并后验证。
+- 存在相关影响、冲突或无法证明无影响时，按项目约定更新基线或形成候选集成结果，绑定实际待验 commit 并做定向核对；标准验收由 Acceptance Owner 独立复验，轻量核对超出适用条件时指定 Acceptance Owner 并转为标准验收。影响扩大时扩大回归。改变交付内容后，标准验收重新进入 `In Review`；未受影响的历史证据可按共享规则复用，不将旧验收结论直接套在新 commit 上。最终合并前再次核对集成 HEAD，发生变化时按同一规则评估。
+- 轻量核对 Task 的证据复用和基线变化由 Task Owner 检查并记录；更新后仍满足轻量条件时只核对受影响内容，超出条件则指定 Acceptance Owner 并转标准验收，不以轻量模式跳过相关影响。
 - Task commit 不包含合约升级或无关项目记录；合约升级必须是独立依赖更新。
 
 合并后必须记录 merge commit、合并前的集成分支 HEAD，并在干净 worktree 中运行 Task 定义的最小合并后验证。
