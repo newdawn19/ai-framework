@@ -1,0 +1,8 @@
+.DS_Store
+*.swp
+*~
+
+# Local generated reports and QA artifacts.
+/.tmp_ai_coding_report/
+/.tmp_probation/
+/outputs/
