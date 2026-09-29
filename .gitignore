@@ -6,3 +6,6 @@
 /.tmp_ai_coding_report/
 /.tmp_probation/
 /outputs/
+
+# Local agent tooling runtime.
+/.codebuddy/
