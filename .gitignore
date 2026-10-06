@@ -7,5 +7,5 @@
 /.tmp_probation/
 /outputs/
 
-# Local agent tooling runtime.
+# 工具生成的本地控制面数据，不入库
 /.codebuddy/
